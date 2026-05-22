@@ -43,6 +43,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 		"stopped";
 
 	private transcriptFile: TFile | null = null;
+	private sourceFile: TFile | null = null;
 
 	private transcriptBuffer = "";
 	private writeTimer: number | null = null;
@@ -102,19 +103,27 @@ export default class SonioxTranscriberPlugin extends Plugin {
 
 		try {
 			this.recorderState = "starting";
+			this.sourceFile = sourceFile;
 			this.transcriptBuffer = "";
 			this.writtenText = "";
 
 			this.transcriptFile = await this.createTranscriptFile(sourceFile);
 
 			await this.addTranscriptLinkToSource(sourceFile, this.transcriptFile);
+			await this.setSourceRecordingStatus(sourceFile, "recording");
 
 			await this.startSonioxRecording();
 
-			new Notice("Soniox wordt gestart.");
+			new Notice("Soniox opname gestart.");
 		} catch (error) {
 			console.error(error);
+
+			if (this.sourceFile) {
+				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
+			}
+
 			this.resetRecorderState();
+
 			new Notice(`Start mislukt: ${String(error)}`);
 		}
 	}
@@ -147,16 +156,11 @@ export default class SonioxTranscriberPlugin extends Plugin {
 
 			if (new_state === "recording") {
 				this.recorderState = "running";
-
-				new Notice(`Transcriptie gestart: ${this.transcriptFile?.path}`);
 			}
 		});
 
 		this.recorder.on("result", (result: any) => {
-			console.log(
-				"FULL SONIOX RESULT",
-				JSON.stringify(result, null, 2)
-			);
+			console.log("FULL SONIOX RESULT", JSON.stringify(result, null, 2));
 
 			const tokens = result.tokens ?? result.raw?.tokens ?? [];
 
@@ -165,9 +169,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				return;
 			}
 
-			const text = tokens
-				.map((token: any) => token.text ?? "")
-				.join("");
+			const text = tokens.map((token: any) => token.text ?? "").join("");
 
 			if (!text.trim()) return;
 
@@ -191,30 +193,39 @@ export default class SonioxTranscriberPlugin extends Plugin {
 			this.writtenText = "";
 		});
 
-		this.recorder.on("error", (error: any) => {
+		this.recorder.on("error", async (error: any) => {
 			console.error("Soniox error", error);
+
+			if (this.sourceFile) {
+				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
+			}
+
 			this.resetRecorderState();
+
 			new Notice(`Soniox fout: ${error?.message ?? String(error)}`);
 		});
 
 		this.recorder.on("finished", async () => {
 			await this.flushTranscriptBuffer();
 			await this.markTranscriptCompleted();
+
+			if (this.sourceFile) {
+				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
+			}
+
 			this.resetRecorderState();
+
 			new Notice("Transcriptie afgerond.");
 		});
 
-// In deze Soniox SDK-versie start record(config) automatisch.
-// Geen recorder.start() aanroepen.
-console.log("Soniox recorder initialized");
+		console.log("Soniox recorder initialized");
 	}
 
 	async stopTranscription() {
-if (!this.recorder) {
-	console.log("Geen recorder gevonden bij stop.");
-	new Notice("Er loopt geen transcriptie.");
-	return;
-}
+		if (!this.recorder) {
+			new Notice("Er loopt geen transcriptie.");
+			return;
+		}
 
 		const recorderToStop = this.recorder;
 
@@ -240,6 +251,10 @@ if (!this.recorder) {
 			await this.flushTranscriptBuffer();
 			await this.markTranscriptCompleted();
 
+			if (this.sourceFile) {
+				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
+			}
+
 			new Notice("Transcriptie gestopt.");
 		} catch (error) {
 			console.error("Stop mislukt", error);
@@ -254,6 +269,7 @@ if (!this.recorder) {
 		this.client = null;
 		this.recorderState = "stopped";
 		this.transcriptFile = null;
+		this.sourceFile = null;
 		this.transcriptBuffer = "";
 		this.writtenText = "";
 
@@ -323,6 +339,18 @@ if (!this.recorder) {
 				frontmatter[
 					this.settings.transcriptionTag || "transcriptiebestand"
 				] = link;
+			}
+		);
+	}
+
+	private async setSourceRecordingStatus(
+		sourceFile: TFile,
+		status: "recording" | "stopped"
+	) {
+		await this.app.fileManager.processFrontMatter(
+			sourceFile,
+			(frontmatter) => {
+				frontmatter.soniox_status = status;
 			}
 		);
 	}
