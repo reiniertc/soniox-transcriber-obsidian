@@ -1,0 +1,9 @@
+{
+  "id": "soniox-transcriber",
+  "name": "Soniox Transcriber",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Live transcription to markdown files using Soniox.",
+  "author": "Reinier Taudin Chabot",
+  "isDesktopOnly": true
+}
