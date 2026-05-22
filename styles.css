@@ -1,8 +1,28 @@
-/*
+.soniox-recording-banner {
+	position: fixed;
+	bottom: 20px;
+	right: 20px;
+	z-index: 99999;
+	background: #b00020;
+	color: white;
+	padding: 10px 16px;
+	border-radius: 10px;
+	font-weight: 700;
+	font-size: 14px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	animation: sonioxPulse 1.5s infinite;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+@keyframes sonioxPulse {
+	0% {
+		opacity: 1;
+	}
 
-If your plugin does not need CSS, delete this file.
+	50% {
+		opacity: 0.6;
+	}
 
-*/
+	100% {
+		opacity: 1;
+	}
+}

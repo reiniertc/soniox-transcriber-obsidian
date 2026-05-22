@@ -48,6 +48,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 	private transcriptBuffer = "";
 	private writeTimer: number | null = null;
 	private writtenText = "";
+	private recordingBannerEl: HTMLElement | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -77,10 +78,20 @@ export default class SonioxTranscriberPlugin extends Plugin {
 		this.addRibbonIcon("square", "Stop Soniox transcription", async () => {
 			await this.stopTranscription();
 		});
+
+		this.registerDomEvent(window, "beforeunload", () => {
+			this.emergencyStopTranscription();
+		});
+
+		this.registerDomEvent(document, "visibilitychange", () => {
+			if (document.visibilityState === "hidden") {
+				this.emergencyStopTranscription();
+			}
+		});
 	}
 
 	onunload() {
-		void this.stopTranscription();
+		this.emergencyStopTranscription();
 	}
 
 	async startTranscription() {
@@ -112,6 +123,8 @@ export default class SonioxTranscriberPlugin extends Plugin {
 			await this.addTranscriptLinkToSource(sourceFile, this.transcriptFile);
 			await this.setSourceRecordingStatus(sourceFile, "recording");
 
+			this.showRecordingBanner();
+
 			await this.startSonioxRecording();
 
 			new Notice("Soniox opname gestart.");
@@ -122,6 +135,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
 			}
 
+			this.hideRecordingBanner();
 			this.resetRecorderState();
 
 			new Notice(`Start mislukt: ${String(error)}`);
@@ -200,6 +214,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
 			}
 
+			this.hideRecordingBanner();
 			this.resetRecorderState();
 
 			new Notice(`Soniox fout: ${error?.message ?? String(error)}`);
@@ -213,6 +228,7 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
 			}
 
+			this.hideRecordingBanner();
 			this.resetRecorderState();
 
 			new Notice("Transcriptie afgerond.");
@@ -255,12 +271,45 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				await this.setSourceRecordingStatus(this.sourceFile, "stopped");
 			}
 
+			this.hideRecordingBanner();
+
 			new Notice("Transcriptie gestopt.");
 		} catch (error) {
 			console.error("Stop mislukt", error);
 			new Notice(`Stop mislukt: ${String(error)}`);
 		} finally {
 			this.resetRecorderState();
+		}
+	}
+
+	private emergencyStopTranscription() {
+		try {
+			if (this.recorder) {
+				if (typeof this.recorder.stop === "function") {
+					void this.recorder.stop();
+				} else if (typeof this.recorder.finish === "function") {
+					void this.recorder.finish();
+				} else if (typeof this.recorder.cancel === "function") {
+					void this.recorder.cancel();
+				} else if (typeof this.recorder.close === "function") {
+					void this.recorder.close();
+				}
+			}
+
+			void this.flushTranscriptBuffer();
+
+			if (this.transcriptFile) {
+				void this.markTranscriptCompleted();
+			}
+
+			if (this.sourceFile) {
+				void this.setSourceRecordingStatus(this.sourceFile, "stopped");
+			}
+
+			this.hideRecordingBanner();
+			this.resetRecorderState();
+		} catch (error) {
+			console.error("Emergency stop failed", error);
 		}
 	}
 
@@ -353,6 +402,23 @@ export default class SonioxTranscriberPlugin extends Plugin {
 				frontmatter.soniox_status = status;
 			}
 		);
+	}
+
+	private showRecordingBanner() {
+		if (this.recordingBannerEl) return;
+
+		this.recordingBannerEl = document.createElement("div");
+		this.recordingBannerEl.textContent = "🔴 Soniox opname loopt...";
+		this.recordingBannerEl.className = "soniox-recording-banner";
+
+		document.body.appendChild(this.recordingBannerEl);
+	}
+
+	private hideRecordingBanner() {
+		if (!this.recordingBannerEl) return;
+
+		this.recordingBannerEl.remove();
+		this.recordingBannerEl = null;
 	}
 
 	private queueTranscript(text: string) {
